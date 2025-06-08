@@ -938,8 +938,7 @@ create_admin_user() {
         -c /data/homeserver.yaml \
         -u "$admin_user" \
         -p "$admin_pass" \
-        -a \
-        http://localhost:8008; then
+        -a; then
         log "管理员用户创建完成: @$admin_user:$(get_env "DOMAIN_NAME" "example.com")"
     else
         warn "自动创建管理员用户失败，请手动创建"
