@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="v2.5.6"
+SCRIPT_VERSION="v2.5.7"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -1505,13 +1505,12 @@ create_admin_user() {
         sleep 5
     done
     
-    # 创建管理员用户（修复：只使用配置文件，不使用shared secret参数）
+    # 创建管理员用户（修复：使用非交互式方式传递密码）
     log_info "创建管理员用户..."
     
-    if kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
+    if echo "$ADMIN_PASSWORD" | kubectl exec -i -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
         -c /conf/homeserver.yaml \
         -u "$ADMIN_USERNAME" \
-        -p "$ADMIN_PASSWORD" \
         -a; then
         log_success "管理员用户创建完成: $ADMIN_USERNAME"
         return 0
