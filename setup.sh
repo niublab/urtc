@@ -243,7 +243,6 @@ create_user() {
         SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
         kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
             -c /conf/homeserver.yaml \
-            -k "$SHARED_SECRET" \
             -u "$username" \
             -p "$password" \
             -a
@@ -252,7 +251,6 @@ create_user() {
         SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
         kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
             -c /conf/homeserver.yaml \
-            -k "$SHARED_SECRET" \
             -u "$username" \
             -p "$password"
         log_success "普通用户 $username 创建完成"
@@ -1384,7 +1382,6 @@ create_admin_user() {
     SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
     if kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
         -c /conf/homeserver.yaml \
-        -k "$SHARED_SECRET" \
         -u "$ADMIN_USERNAME" \
         -p "$ADMIN_PASSWORD" \
         -a; then
