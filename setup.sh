@@ -1,11 +1,10 @@
 #!/bin/bash
-# Matrix Stack 完整安装和管理工具 v0.1.4 - 重定向端口修复版
+# Matrix Stack 完整安装和管理工具 v0.1.2 - 完全修复版
 # 支持完全自定义配置、高级用户管理、清理功能和证书切换
 # 基于 element-hq/ess-helm 项目 - 修正所有已知问题
 # 添加 systemd 定时更新动态IP、acme.sh证书管理、高可用配置
 # 完全适配 MSC3861 环境，修复 register_new_matrix_user 问题
 # 修复版本：解决证书issuer、端口转发、DNS验证等问题
-# v0.1.4 新增：修复重定向端口缺失问题
 
 set -e
 
@@ -22,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="v0.1.4"
+SCRIPT_VERSION="v0.1.2"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -90,7 +89,7 @@ show_banner() {
     echo -e "${CYAN}"
     cat << 'EOF'
 ╔══════════════════════════════════════════════════════════════════╗
-║              Matrix Stack 完整安装和管理工具 v0.1.4             ║
+║              Matrix Stack 完整安装和管理工具 v2.5.1             ║
 ║                                                                  ║
 ║  🚀 支持完全自定义配置                                           ║
 ║  🏠 专为 NAT 环境和动态 IP 设计                                  ║
@@ -1283,7 +1282,7 @@ synapse:
     className: "nginx"
     tlsEnabled: true
 
-# Element Web 配置 - 修复重定向端口问题
+# Element Web 配置
 elementWeb:
   enabled: true
   replicas: 1
@@ -1294,16 +1293,9 @@ elementWeb:
     className: "nginx"
     tlsEnabled: true
   additional:
-    # 修复：确保所有客户端配置都包含正确的端口号
-    default_server_config: '{"m.homeserver":{"base_url":"https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}","server_name":"${SUBDOMAIN_MATRIX}.${DOMAIN}"},"m.identity_server":{"base_url":"https://vector.im"}}'
-    # 修复：Element Web 内部重定向配置
-    brand: "Element"
-    default_theme: "light"
-    show_labs_settings: true
-    # 修复：确保所有内部链接都包含端口号
-    permalink_prefix: "https://${SUBDOMAIN_CHAT}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
+    default_server_config: '{"m.homeserver":{"base_url":"https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}","server_name":"${SUBDOMAIN_MATRIX}.${DOMAIN}"}}'
 
-# Matrix Authentication Service 配置 - 修复重定向端口问题
+# Matrix Authentication Service 配置
 matrixAuthenticationService:
   enabled: true
   ingress:
@@ -1312,17 +1304,8 @@ matrixAuthenticationService:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
     className: "nginx"
     tlsEnabled: true
-  # 修复：MAS 重定向配置包含端口号
-  config:
-    http:
-      public_base: "https://${SUBDOMAIN_AUTH}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-    matrix:
-      homeserver: "https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-    upstream:
-      name: "${SUBDOMAIN_MATRIX}.${DOMAIN}"
-      issuer: "https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
 
-# Matrix RTC 配置 - 修复重定向端口问题
+# Matrix RTC 配置
 matrixRTC:
   enabled: true
   ingress:
@@ -1331,39 +1314,18 @@ matrixRTC:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
     className: "nginx"
     tlsEnabled: true
-  # 修复：RTC 服务配置包含端口号
-  config:
-    livekit:
-      api_host: "${SUBDOMAIN_RTC}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-      ws_url: "wss://${SUBDOMAIN_RTC}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
 
-# Well-known delegation 配置 - 完全修复重定向端口问题
+# Well-known delegation 配置
 wellKnownDelegation:
   enabled: true
   additional:
-    # 修复：Matrix 服务器发现包含端口号
     server: '{"m.server": "${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"}'
-    # 修复：客户端发现配置包含端口号
-    client: '{"m.homeserver":{"base_url":"https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"},"m.identity_server":{"base_url":"https://vector.im"},"org.matrix.msc3575.proxy":{"url":"https://${SUBDOMAIN_RTC}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"}}'
-  # 修复：基础域名重定向包含端口号 - 关键修复
-  baseDomainRedirect:
-    enabled: true
-    url: "https://${SUBDOMAIN_CHAT}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-  # 修复：所有子域名重定向都包含端口号
-  ingress:
-    host: "${DOMAIN}"
-    annotations:
-      cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
-      # 修复：nginx 重定向注解包含端口号
-      nginx.ingress.kubernetes.io/permanent-redirect: "https://${SUBDOMAIN_CHAT}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-    className: "nginx"
-    tlsEnabled: true
 
 EOF
 
     # 保存配置到环境文件
     cat > "${INSTALL_PATH}/configs/.env" << EOF
-# Matrix Stack 部署配置 - v0.1.4
+# Matrix Stack 部署配置
 DOMAIN=${DOMAIN}
 INSTALL_PATH=${INSTALL_PATH}
 HTTP_NODEPORT=${HTTP_NODEPORT}
