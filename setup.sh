@@ -1313,14 +1313,6 @@ matrixRTC:
 # Well-known delegation 配置
 wellKnownDelegation:
   enabled: true
-  ingress:
-    host: "${DOMAIN}"
-    annotations:
-      cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
-      nginx.ingress.kubernetes.io/ssl-redirect: "true"
-      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    className: "nginx"
-    tlsEnabled: true
 
 EOF
 
