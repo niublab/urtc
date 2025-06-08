@@ -1206,7 +1206,7 @@ setup_ingress_controller() {
         --wait
     
     # 配置SSL跳转和外部端口
-    kubectl patch configmap ingress-nginx-controller -n ingress-nginx --patch "{\"data\":{\"ssl-redirect\":\"true\",\"force-ssl-redirect\":\"true\",\"ssl-port\":\"${HTTPS_NODEPORT}\",\"http-port\":\"${HTTP_NODEPORT}\"}}"
+    kubectl patch configmap ingress-nginx-controller -n ingress-nginx --patch "{\"data\":{\"ssl-redirect\":\"true\",\"force-ssl-redirect\":\"true\",\"ssl-port\":\"${EXTERNAL_HTTPS_PORT}\",\"http-port\":\"${EXTERNAL_HTTP_PORT}\"}}"
     
     log_success "Ingress 控制器配置完成"
 }
