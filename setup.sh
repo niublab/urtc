@@ -1087,7 +1087,7 @@ quick_deployment_config() {
     SUBDOMAIN_AUTH="$DEFAULT_SUBDOMAIN_AUTH"
     SUBDOMAIN_RTC="$DEFAULT_SUBDOMAIN_RTC"
     USE_LIVEKIT_TURN="true"
-    CERT_MODE="letsencrypt-http"
+    CERT_MODE="letsencrypt-staging-http"
     
     log_success "快速部署配置完成"
 }
@@ -1185,19 +1185,27 @@ custom_deployment_config() {
     # 证书模式选择
     echo
     log_info "证书模式配置"
-    echo "1) Let's Encrypt (HTTP-01) - 推荐"
-    echo "2) Let's Encrypt (DNS-01) - 需要 DNS API"
-    echo "3) 自签名证书 - 仅用于测试"
-    read -p "请选择证书模式 [1-3]: " cert_choice
+    echo "1) Let's Encrypt Staging (HTTP-01) - 测试环境，推荐首次部署 [默认]"
+    echo "2) Let's Encrypt Production (HTTP-01) - 生产环境"
+    echo "3) Let's Encrypt Staging (DNS-01) - 测试环境，需要 DNS API"
+    echo "4) Let's Encrypt Production (DNS-01) - 生产环境，需要 DNS API"
+    echo "5) 手动证书 - 使用现有证书"
+    read -p "请选择证书模式 [默认: 1]: " cert_choice
+    cert_choice=${cert_choice:-1}
     
     case $cert_choice in
-        1) CERT_MODE="letsencrypt-http" ;;
-        2) 
+        1) CERT_MODE="letsencrypt-staging-http" ;;
+        2) CERT_MODE="letsencrypt-http" ;;
+        3) 
+            CERT_MODE="letsencrypt-staging-dns"
+            configure_dns_provider
+            ;;
+        4) 
             CERT_MODE="letsencrypt-dns"
             configure_dns_provider
             ;;
-        3) CERT_MODE="selfsigned" ;;
-        *) CERT_MODE="letsencrypt-http" ;;
+        5) CERT_MODE="manual" ;;
+        *) CERT_MODE="letsencrypt-staging-http" ;;
     esac
     
     log_success "自定义部署配置完成"
@@ -1401,14 +1409,20 @@ create_cluster_issuer() {
     log_info "创建 ClusterIssuer..."
     
     case $CERT_MODE in
+        "letsencrypt-staging-http")
+            create_letsencrypt_staging_http_issuer
+            ;;
         "letsencrypt-http")
             create_letsencrypt_http_issuer
+            ;;
+        "letsencrypt-staging-dns")
+            create_letsencrypt_staging_dns_issuer
             ;;
         "letsencrypt-dns")
             create_letsencrypt_dns_issuer
             ;;
-        "selfsigned")
-            create_selfsigned_issuer
+        "manual")
+            log_info "手动证书模式，跳过 ClusterIssuer 创建"
             ;;
         *)
             log_error "未知的证书模式: $CERT_MODE"
@@ -1419,8 +1433,8 @@ create_cluster_issuer() {
     log_success "ClusterIssuer 创建完成"
 }
 
-# 创建 Let's Encrypt HTTP-01 ClusterIssuer
-create_letsencrypt_http_issuer() {
+# 创建 Let's Encrypt Staging HTTP-01 ClusterIssuer
+create_letsencrypt_staging_http_issuer() {
     cat << EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -1428,7 +1442,7 @@ metadata:
   name: letsencrypt-staging
 spec:
   acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
     email: ${ADMIN_EMAIL}
     privateKeySecretRef:
       name: letsencrypt-staging
@@ -1436,6 +1450,54 @@ spec:
     - http01:
         ingress:
           class: nginx
+EOF
+}
+
+# 创建 Let's Encrypt HTTP-01 ClusterIssuer
+create_letsencrypt_http_issuer() {
+    cat << EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-production
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${ADMIN_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-production
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF
+}
+
+# 创建 Let's Encrypt Staging DNS-01 ClusterIssuer
+create_letsencrypt_staging_dns_issuer() {
+    # 创建 DNS API Secret
+    kubectl create secret generic dns-api-secret \
+        --from-literal=api-token="$DNS_API_KEY" \
+        -n cert-manager \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    cat << EOF | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${ADMIN_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+    - dns01:
+        cloudflare:
+          apiTokenSecretRef:
+            name: dns-api-secret
+            key: api-token
 EOF
 }
 
@@ -1451,31 +1513,19 @@ create_letsencrypt_dns_issuer() {
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt-staging
+  name: letsencrypt-production
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
     email: ${ADMIN_EMAIL}
     privateKeySecretRef:
-      name: letsencrypt-staging
+      name: letsencrypt-production
     solvers:
     - dns01:
         cloudflare:
           apiTokenSecretRef:
             name: dns-api-secret
             key: api-token
-EOF
-}
-
-# 创建自签名 ClusterIssuer
-create_selfsigned_issuer() {
-    cat << EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: selfsigned-issuer
-spec:
-  selfSigned: {}
 EOF
 }
 
@@ -1488,14 +1538,14 @@ generate_values_yaml() {
     # 根据证书模式设置ClusterIssuer名称
     local cluster_issuer_name
     case $CERT_MODE in
-        "letsencrypt-http"|"letsencrypt-dns")
-            cluster_issuer_name="letsencrypt-staging"
-            ;;
         "letsencrypt-staging-http"|"letsencrypt-staging-dns")
             cluster_issuer_name="letsencrypt-staging"
             ;;
-        "selfsigned")
-            cluster_issuer_name="selfsigned-issuer"
+        "letsencrypt-http"|"letsencrypt-dns")
+            cluster_issuer_name="letsencrypt-production"
+            ;;
+        "manual")
+            cluster_issuer_name="manual-issuer"
             ;;
         *)
             cluster_issuer_name="letsencrypt-staging"
@@ -2102,4 +2152,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
-
