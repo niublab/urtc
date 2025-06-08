@@ -151,15 +151,7 @@ ess-helm-nat-enhanced/
 
 ### 快速部署
 ```bash
-# 1. 下载脚本
-curl -fsSL https://raw.githubusercontent.com/niublab/ess-helm-nat/main/setup.sh -o setup.sh
-chmod +x setup.sh
-
-# 2. 运行部署
-./setup.sh
-
-# 3. 按菜单提示完成配置
-# 选择: 1→2→3→4→5→6→7→8
+bash <(curl -fsSL https://raw.githubusercontent.com/niublab/ess-helm-nat/main/setup.sh )
 ```
 
 ### 详细步骤
