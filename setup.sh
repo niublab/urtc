@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="2.5.5"
+SCRIPT_VERSION="v2.5.6"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -861,6 +861,15 @@ quick_deployment_config() {
     log_info "快速部署模式"
     echo
     
+    # 尝试加载已有配置
+    load_config
+    if [[ -n "$DOMAIN" ]]; then
+        log_info "检测到已有配置，使用现有配置进行快速部署"
+        log_info "域名: $DOMAIN"
+        log_info "管理员用户名: $ADMIN_USERNAME"
+        return 0
+    fi
+    
     # 基本配置
     read -p "请输入您的域名 (例: example.com): " DOMAIN
     while [[ -z "$DOMAIN" ]]; do
@@ -1309,6 +1318,8 @@ matrixRTC:
 # Well-known delegation 配置
 wellKnownDelegation:
   enabled: true
+  additional:
+    server: '{"m.server": "${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"}'
 
 EOF
 
