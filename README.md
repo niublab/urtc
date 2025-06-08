@@ -2,10 +2,6 @@
 
 ## 项目概述
 
-本项目是对 [niublab/ess-helm-nat](https://github.com/niublab/ess-helm-nat) 项目的完善和增强，基于 Element Server Suite (ESS) Community Edition，专为动态IP内网环境设计的完整Matrix视频会议系统部署解决方案。
-
-## 完善内容
-
 ### 1. 保留原有功能
 - ✅ 菜单式交互界面
 - ✅ 完整的用户管理系统
@@ -151,7 +147,7 @@ ess-helm-nat-enhanced/
 
 ### 快速部署
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/niublab/ess-helm-nat/main/setup.sh )
+bash <(curl -fsSL https://raw.githubusercontent.com/niublab/urtc/main/setup.sh )
 ```
 
 ### 详细步骤
