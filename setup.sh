@@ -899,15 +899,49 @@ create_admin_user() {
     # 等待Synapse就绪
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=synapse -n "$DEFAULT_NAMESPACE" --timeout=300s
     
-    # 创建管理员用户
-    kubectl exec -n "$DEFAULT_NAMESPACE" deployment/synapse -- \
+    # 创建管理员用户 - 修复版本
+    log "创建管理员用户..."
+    
+    # 等待Synapse完全启动
+    local max_attempts=30
+    local attempt=0
+    
+    while [[ $attempt -lt $max_attempts ]]; do
+        if kubectl exec -n "$DEFAULT_NAMESPACE" ess-synapse-main-0 -c synapse -- \
+            curl -s http://localhost:8008/_matrix/client/versions >/dev/null 2>&1; then
+            log "Synapse API已就绪"
+            break
+        fi
+        
+        log "等待Synapse API启动... (尝试 $((attempt + 1))/$max_attempts)"
+        sleep 10
+        ((attempt++))
+    done
+    
+    if [[ $attempt -eq $max_attempts ]]; then
+        error "Synapse API启动超时"
+        return 1
+    fi
+    
+    # 尝试创建管理员用户
+    if kubectl exec -n "$DEFAULT_NAMESPACE" ess-synapse-main-0 -c synapse -- \
         register_new_matrix_user \
         -c /data/homeserver.yaml \
         -u "$admin_user" \
         -p "$admin_pass" \
-        -a
-    
-    log "管理员用户创建完成: @$admin_user:$(get_env "DOMAIN_NAME" "example.com")"
+        -a \
+        http://localhost:8008; then
+        log "管理员用户创建完成: @$admin_user:$(get_env "DOMAIN_NAME" "example.com")"
+    else
+        warn "自动创建管理员用户失败，请手动创建"
+        echo
+        echo "手动创建用户命令："
+        echo "kubectl exec -it -n $DEFAULT_NAMESPACE ess-synapse-main-0 -c synapse -- bash"
+        echo "register_new_matrix_user -c /data/homeserver.yaml -u $admin_user -p $admin_pass -a"
+        echo
+        echo "或者通过Element Web界面注册用户"
+        return 1
+    fi
 }
 
 # 配置动态IP监控
