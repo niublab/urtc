@@ -1,5 +1,5 @@
 #!/bin/bash
-# Matrix Stack 完整安装和管理工具 v2.5.3 - 完全修复版
+# Matrix Stack 完整安装和管理工具 v2.5.5 - 完全修复版
 # 支持完全自定义配置、高级用户管理、清理功能和证书切换
 # 基于 element-hq/ess-helm 项目 - 修正所有已知问题
 # 添加 systemd 定时更新动态IP、acme.sh证书管理、高可用配置
@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="2.5.3"
+SCRIPT_VERSION="2.5.5"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -1216,7 +1216,7 @@ setup_cert_manager() {
     # 安装 cert-manager
     helm upgrade --install cert-manager jetstack/cert-manager \
         --namespace cert-manager \
-        --set installCRDs=true \
+        --set crds.enabled=true \
         --wait
     
     log_success "证书管理器配置完成"
@@ -1270,6 +1270,10 @@ synapse:
     host: "${SUBDOMAIN_MATRIX}.${DOMAIN}"
     annotations:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
+      nginx.ingress.kubernetes.io/server-snippet: |
+        location = / {
+          return 301 https://${SUBDOMAIN_CHAT}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}$request_uri;
+        }
     className: "nginx"
     tlsEnabled: true
 
@@ -1284,7 +1288,7 @@ elementWeb:
     className: "nginx"
     tlsEnabled: true
   additional:
-    default_server_config: '{"m.homeserver":{"base_url":"https://${SUBDOMAIN_MATRIX}.${DOMAIN}","server_name":"${SUBDOMAIN_MATRIX}.${DOMAIN}"}}'
+    default_server_config: '{"m.homeserver":{"base_url":"https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}","server_name":"${SUBDOMAIN_MATRIX}.${DOMAIN}"}}'
 
 # Matrix Authentication Service 配置
 matrixAuthenticationService:
@@ -1309,6 +1313,14 @@ matrixRTC:
 # Well-known delegation 配置
 wellKnownDelegation:
   enabled: true
+  ingress:
+    host: "${DOMAIN}"
+    annotations:
+      cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    className: "nginx"
+    tlsEnabled: true
 
 EOF
 
@@ -1494,13 +1506,11 @@ create_admin_user() {
         sleep 5
     done
     
-    # 创建管理员用户（修复：使用完整路径和配置文件）
+    # 创建管理员用户（修复：只使用配置文件，不使用shared secret参数）
     log_info "创建管理员用户..."
-    SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
     
     if kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
         -c /conf/homeserver.yaml \
-        -k "$SHARED_SECRET" \
         -u "$ADMIN_USERNAME" \
         -p "$ADMIN_PASSWORD" \
         -a; then
