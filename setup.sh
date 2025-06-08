@@ -466,7 +466,7 @@ list_registration_tokens() {
     
     # 获取令牌列表
     response=$(kubectl exec -n ess "$SYNAPSE_POD" -- curl -s \
-        "http://localhost:8008/_synapse/admin/v1/registration_tokens/$token"
+        "http://localhost:8008/_synapse/admin/v1/registration_tokens")
         
     if echo "$response" | grep -q "registration_tokens"; then
         echo -e "\n${CYAN}注册令牌列表：${NC}"
@@ -1794,3 +1794,4 @@ main() {
 
 # 脚本入口
 main "$@"
+
