@@ -1270,10 +1270,6 @@ synapse:
     host: "${SUBDOMAIN_MATRIX}.${DOMAIN}"
     annotations:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
-      nginx.ingress.kubernetes.io/server-snippet: |
-        location = / {
-          return 301 https://${SUBDOMAIN_CHAT}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}$request_uri;
-        }
     className: "nginx"
     tlsEnabled: true
 
