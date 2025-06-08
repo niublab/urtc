@@ -59,10 +59,8 @@ info() {
 
 # 检查是否为root用户
 check_root() {
-    if [[ $EUID -eq 0 ]]; then
-        error "此脚本不应以root用户运行，请使用普通用户"
-        exit 1
-    fi
+    # 允许root用户运行
+    return 0
 }
 
 # 检查系统要求
