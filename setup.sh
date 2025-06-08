@@ -6,6 +6,9 @@
 
 set -e
 
+# 设置 KUBECONFIG 环境变量
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
