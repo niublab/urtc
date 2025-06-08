@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="v2.5.9"
+SCRIPT_VERSION="v2.6.0"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
