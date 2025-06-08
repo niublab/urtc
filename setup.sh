@@ -1,5 +1,5 @@
 #!/bin/bash
-# Matrix Stack 完整安装和管理工具 v0.1.1 - 完全修复版
+# Matrix Stack 完整安装和管理工具 v0.1.2 - 完全修复版
 # 支持完全自定义配置、高级用户管理、清理功能和证书切换
 # 基于 element-hq/ess-helm 项目 - 修正所有已知问题
 # 添加 systemd 定时更新动态IP、acme.sh证书管理、高可用配置
@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="v0.1.1"
+SCRIPT_VERSION="v0.1.2"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -1505,14 +1505,14 @@ create_admin_user() {
         sleep 5
     done
     
-    # 创建管理员用户（修复：使用 MAS CLI 而不是 Synapse）
+    # 创建管理员用户（修复：基于实际 --help 确定的正确参数格式）
     log_info "创建管理员用户..."
     
     if kubectl exec -n ess deploy/ess-matrix-authentication-service -- mas-cli manage register-user \
-        --username "$ADMIN_USERNAME" \
         --password "$ADMIN_PASSWORD" \
         --admin \
-        --yes; then
+        --yes \
+        "$ADMIN_USERNAME"; then
         log_success "管理员用户创建完成: $ADMIN_USERNAME"
         return 0
     else
