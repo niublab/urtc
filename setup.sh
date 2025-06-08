@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="v2.5.8"
+SCRIPT_VERSION="v2.5.9"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -1318,12 +1318,6 @@ matrixRTC:
 # Well-known delegation 配置
 wellKnownDelegation:
   enabled: true
-  ingress:
-    host: "${DOMAIN}"
-    annotations:
-      cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
-    className: "nginx"
-    tlsEnabled: true
   additional:
     server: '{"m.server": "${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"}'
 
