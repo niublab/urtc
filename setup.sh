@@ -425,6 +425,26 @@ install_k3s() {
     mkdir -p ~/.kube
     sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
     sudo chown $USER:$USER ~/.kube/config
+    export KUBECONFIG=~/.kube/config
+
+# 等待K3s完全启动
+sleep 15
+
+# 验证连接
+local timeout=60
+local count=0
+while ! kubectl get nodes &>/dev/null; do
+    if [[ $count -ge $timeout ]]; then
+        error "K3s连接验证失败，请手动检查"
+        echo "手动修复命令："
+        echo "sudo systemctl restart k3s"
+        echo "sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config"
+        echo "sudo chown \$USER:\$USER ~/.kube/config"
+        exit 1
+    fi
+    sleep 5
+    ((count+=5))
+done
     
     log "K3s安装完成"
 }
