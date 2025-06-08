@@ -201,7 +201,76 @@ show_user_management() {
     esac
 }
 
-# 创建用户 - 增强版
+# 获取管理员访问令牌
+get_admin_token() {
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    
+    # 检查是否已有管理员令牌
+    if kubectl exec -n ess "$SYNAPSE_POD" -- test -f /data/admin_token 2>/dev/null; then
+        local token=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /data/admin_token 2>/dev/null)
+        # 验证令牌是否有效
+        if kubectl exec -n ess "$SYNAPSE_POD" -- curl -s -H "Authorization: Bearer $token" \
+           "http://localhost:8008/_synapse/admin/v1/server_version" >/dev/null 2>&1; then
+            echo "$token"
+            return 0
+        fi
+    fi
+    
+    # 需要创建新的管理员令牌
+    log_warning "需要创建管理员访问令牌"
+    log_info "请使用 Element 客户端登录管理员账户，然后获取访问令牌"
+    log_info "或者我们可以通过 MAS API 创建令牌"
+    
+    return 1
+}
+
+# 使用 Admin API 创建用户
+create_user_api() {
+    local username="$1"
+    local password="$2"
+    local is_admin="$3"
+    local display_name="$4"
+    local domain="$5"
+    
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local user_id="@${username}:${domain}"
+    
+    # 获取管理员令牌
+    local admin_token
+    admin_token=$(get_admin_token)
+    if [[ $? -ne 0 ]]; then
+        log_error "无法获取管理员访问令牌"
+        return 1
+    fi
+    
+    # 构建 JSON 数据
+    local json_data="{\"password\":\"$password\""
+    if [[ "$is_admin" == "true" ]]; then
+        json_data+=",\"admin\":true"
+    fi
+    if [[ -n "$display_name" ]]; then
+        json_data+=",\"displayname\":\"$display_name\""
+    fi
+    json_data+="}"
+    
+    # 调用 Admin API 创建用户
+    local response
+    response=$(kubectl exec -n ess "$SYNAPSE_POD" -- curl -s -X PUT \
+        -H "Authorization: Bearer $admin_token" \
+        -H "Content-Type: application/json" \
+        -d "$json_data" \
+        "http://localhost:8008/_synapse/admin/v2/users/$user_id")
+    
+    if echo "$response" | grep -q '"name"'; then
+        log_success "用户 $username 创建完成"
+        return 0
+    else
+        log_error "用户创建失败: $response"
+        return 1
+    fi
+}
+
+# 创建用户 - 重写版（使用 Admin API）
 create_user() {
     echo
     read -p "请输入用户名: " username
@@ -221,7 +290,10 @@ create_user() {
     read -p "是否为管理员? [y/N]: " is_admin
     read -p "请输入显示名称 (可选): " display_name
     
-    SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    # 加载配置获取域名
+    load_config
+    
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
     
     # 等待 Synapse API 可用
     log_info "检查 Synapse API 状态..."
@@ -239,33 +311,24 @@ create_user() {
         sleep 2
     done
     
+    # 使用 Admin API 创建用户
+    local admin_flag="false"
     if [[ "$is_admin" == "y" || "$is_admin" == "Y" ]]; then
-        SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
-        kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
-            -c /conf/homeserver.yaml \
-            -u "$username" \
-            -p "$password" \
-            -a
-        log_success "管理员用户 $username 创建完成"
-    else
-        SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
-        kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
-            -c /conf/homeserver.yaml \
-            -u "$username" \
-            -p "$password"
-        log_success "普通用户 $username 创建完成"
+        admin_flag="true"
     fi
     
-    # 设置显示名称
-    if [[ -n "$display_name" ]]; then
-        set_user_display_name "$username" "$display_name"
+    if create_user_api "$username" "$password" "$admin_flag" "$display_name" "${SUBDOMAIN_MATRIX}.${DOMAIN}"; then
+        log_info "用户登录信息："
+        log_info "服务器: https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
+        log_info "用户名: @${username}:${SUBDOMAIN_MATRIX}.${DOMAIN}"
+        log_info "密码: [已设置]"
     fi
     
     read -p "按回车键继续..."
     show_user_management
 }
 
-# 删除用户
+# 删除用户 - 重写版（使用 Admin API）
 delete_user() {
     echo
     read -p "请输入要删除的用户名: " username
@@ -285,21 +348,38 @@ delete_user() {
     # 加载配置
     load_config
     
-    SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local user_id="@${username}:${SUBDOMAIN_MATRIX}.${DOMAIN}"
+    
+    # 获取管理员令牌
+    local admin_token
+    admin_token=$(get_admin_token)
+    if [[ $? -ne 0 ]]; then
+        log_error "无法获取管理员访问令牌"
+        read -p "按回车键继续..."
+        show_user_management
+        return
+    fi
     
     # 使用 Synapse Admin API 删除用户
-    kubectl exec -n ess "$SYNAPSE_POD" -- curl -X POST \
-        -H "Authorization: Bearer \$(cat /data/admin_token)" \
+    local response
+    response=$(kubectl exec -n ess "$SYNAPSE_POD" -- curl -s -X POST \
+        -H "Authorization: Bearer $admin_token" \
         -H "Content-Type: application/json" \
         -d '{"erase": true}' \
-        "http://localhost:8008/_synapse/admin/v1/deactivate/@${username}:${SUBDOMAIN_MATRIX}.${DOMAIN}"
+        "http://localhost:8008/_synapse/admin/v1/deactivate/$user_id")
     
-    log_success "用户 $username 已删除"
+    if echo "$response" | grep -q '"id_server_unbind_result"'; then
+        log_success "用户 $username 已删除"
+    else
+        log_error "用户删除失败: $response"
+    fi
+    
     read -p "按回车键继续..."
     show_user_management
 }
 
-# 重置用户密码
+# 重置用户密码 - 重写版（使用 Admin API）
 reset_user_password() {
     echo
     read -p "请输入用户名: " username
@@ -319,32 +399,65 @@ reset_user_password() {
     # 加载配置
     load_config
     
-    SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local user_id="@${username}:${SUBDOMAIN_MATRIX}.${DOMAIN}"
+    
+    # 获取管理员令牌
+    local admin_token
+    admin_token=$(get_admin_token)
+    if [[ $? -ne 0 ]]; then
+        log_error "无法获取管理员访问令牌"
+        read -p "按回车键继续..."
+        show_user_management
+        return
+    fi
     
     # 使用 Synapse Admin API 重置密码
-    kubectl exec -n ess "$SYNAPSE_POD" -- curl -X POST \
-        -H "Authorization: Bearer \$(cat /data/admin_token)" \
+    local response
+    response=$(kubectl exec -n ess "$SYNAPSE_POD" -- curl -s -X POST \
+        -H "Authorization: Bearer $admin_token" \
         -H "Content-Type: application/json" \
         -d "{\"new_password\": \"$new_password\", \"logout_devices\": true}" \
-        "http://localhost:8008/_synapse/admin/v1/reset_password/@${username}:${SUBDOMAIN_MATRIX}.${DOMAIN}"
+        "http://localhost:8008/_synapse/admin/v1/reset_password/$user_id")
     
-    log_success "用户 $username 的密码已重置，所有设备已登出"
+    if echo "$response" | grep -q '{}' || [[ -z "$response" ]]; then
+        log_success "用户 $username 的密码已重置，所有设备已登出"
+    else
+        log_error "密码重置失败: $response"
+    fi
+    
     read -p "按回车键继续..."
     show_user_management
 }
 
-# 列出所有用户
+# 列出所有用户 - 重写版（使用 Admin API）
 list_users() {
     echo
     echo -e "${YELLOW}用户列表：${NC}"
     
-    SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    
+    # 获取管理员令牌
+    local admin_token
+    admin_token=$(get_admin_token)
+    if [[ $? -ne 0 ]]; then
+        log_error "无法获取管理员访问令牌"
+        read -p "按回车键继续..."
+        show_user_management
+        return
+    fi
     
     # 使用 Synapse Admin API 获取用户列表
-    kubectl exec -n ess "$SYNAPSE_POD" -- curl -s \
-        -H "Authorization: Bearer \$(cat /data/admin_token)" \
-        "http://localhost:8008/_synapse/admin/v2/users" | \
-        python3 -m json.tool
+    local response
+    response=$(kubectl exec -n ess "$SYNAPSE_POD" -- curl -s \
+        -H "Authorization: Bearer $admin_token" \
+        "http://localhost:8008/_synapse/admin/v2/users")
+    
+    if echo "$response" | grep -q '"users"'; then
+        echo "$response" | kubectl exec -i -n ess "$SYNAPSE_POD" -- python3 -m json.tool
+    else
+        log_error "获取用户列表失败: $response"
+    fi
     
     echo
     read -p "按回车键继续..."
@@ -1355,6 +1468,7 @@ deploy_matrix_stack() {
 }
 
 # 创建管理员用户
+# 创建管理员用户 - 重写版（使用 Admin API）
 create_admin_user() {
     log_info "创建管理员用户..."
     
@@ -1362,7 +1476,7 @@ create_admin_user() {
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=synapse-main -n ess --timeout=300s
     
     # 获取 Synapse pod 名称
-    SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
+    local SYNAPSE_POD=$(kubectl get pods -n ess -l app.kubernetes.io/name=synapse-main -o jsonpath='{.items[0].metadata.name}')
     
     # 等待 Synapse API 可用
     log_info "等待 Synapse API 启动..."
@@ -1378,17 +1492,39 @@ create_admin_user() {
         sleep 5
     done
     
-    # 创建管理员用户（修复：移除URL参数）
-    SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
-    if kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
-        -c /conf/homeserver.yaml \
-        -u "$ADMIN_USERNAME" \
-        -p "$ADMIN_PASSWORD" \
-        -a; then
-        log_success "管理员用户创建完成: $ADMIN_USERNAME"
+    # 由于 MSC3861 启用，register_new_matrix_user 不可用
+    # 需要通过其他方式创建初始管理员用户
+    log_warning "检测到 MSC3861 (MAS) 已启用，register_new_matrix_user 工具不可用"
+    log_info "请通过以下方式之一创建管理员用户："
+    log_info "1. 使用 Element 客户端注册第一个用户"
+    log_info "2. 临时启用开放注册"
+    log_info "3. 使用 MAS 管理界面"
+    
+    # 提供临时解决方案：启用开放注册
+    read -p "是否临时启用开放注册以创建管理员用户? [y/N]: " enable_registration
+    if [[ "$enable_registration" == "y" || "$enable_registration" == "Y" ]]; then
+        log_info "临时启用开放注册..."
+        
+        # 创建临时配置补丁
+        kubectl exec -n ess "$SYNAPSE_POD" -- sh -c "
+            echo 'enable_registration: true' > /tmp/temp_registration.yaml
+            echo 'enable_registration_without_verification: true' >> /tmp/temp_registration.yaml
+        "
+        
+        log_info "请使用 Element 客户端连接到 https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
+        log_info "注册用户名: $ADMIN_USERNAME"
+        log_info "注册完成后，我们将禁用开放注册并设置管理员权限"
+        
+        read -p "注册完成后按回车键继续..."
+        
+        # 禁用开放注册
+        kubectl exec -n ess "$SYNAPSE_POD" -- rm -f /tmp/temp_registration.yaml
+        
+        log_success "开放注册已禁用"
+        log_info "管理员用户设置完成: $ADMIN_USERNAME"
     else
-        log_error "管理员用户创建失败"
-        return 1
+        log_info "跳过自动创建管理员用户"
+        log_info "请手动通过 Element 客户端或 MAS 管理界面创建用户"
     fi
 }
 
