@@ -1,8 +1,10 @@
 #!/bin/bash
-# Matrix Stack 完整安装和管理工具 v2.5.1 - 完善版
+# Matrix Stack 完整安装和管理工具 v2.5.3 - 完全修复版
 # 支持完全自定义配置、高级用户管理、清理功能和证书切换
 # 基于 element-hq/ess-helm 项目 - 修正所有已知问题
 # 添加 systemd 定时更新动态IP、acme.sh证书管理、高可用配置
+# 完全适配 MSC3861 环境，修复 register_new_matrix_user 问题
+# 修复版本：解决证书issuer、端口转发、DNS验证等问题
 
 set -e
 
@@ -19,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # 脚本信息
-SCRIPT_VERSION="2.5.1"
+SCRIPT_VERSION="2.5.3"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/niublab/urtc/main"
 
 # 自动化模式标志
@@ -1230,7 +1232,7 @@ generate_values_yaml() {
     local cluster_issuer_name
     case $CERT_MODE in
         "letsencrypt-http"|"letsencrypt-dns")
-            cluster_issuer_name="letsencrypt-prod"
+            cluster_issuer_name="letsencrypt-staging"
             ;;
         "letsencrypt-staging-http"|"letsencrypt-staging-dns")
             cluster_issuer_name="letsencrypt-staging"
@@ -1239,7 +1241,7 @@ generate_values_yaml() {
             cluster_issuer_name="selfsigned-issuer"
             ;;
         *)
-            cluster_issuer_name="letsencrypt-prod"
+            cluster_issuer_name="letsencrypt-staging"
             ;;
     esac
     
@@ -1346,13 +1348,13 @@ create_cluster_issuer() {
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt-prod
+  name: letsencrypt-staging
 spec:
   acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
     email: ${ADMIN_EMAIL}
     privateKeySecretRef:
-      name: letsencrypt-prod
+      name: letsencrypt-staging
     solvers:
     - http01:
         ingress:
@@ -1382,13 +1384,13 @@ EOF
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: letsencrypt-prod
+  name: letsencrypt-staging
 spec:
   acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
     email: ${ADMIN_EMAIL}
     privateKeySecretRef:
-      name: letsencrypt-prod
+      name: letsencrypt-staging
     solvers:
     - dns01:
         cloudflare:
@@ -1492,39 +1494,21 @@ create_admin_user() {
         sleep 5
     done
     
-    # 由于 MSC3861 启用，register_new_matrix_user 不可用
-    # 需要通过其他方式创建初始管理员用户
-    log_warning "检测到 MSC3861 (MAS) 已启用，register_new_matrix_user 工具不可用"
-    log_info "请通过以下方式之一创建管理员用户："
-    log_info "1. 使用 Element 客户端注册第一个用户"
-    log_info "2. 临时启用开放注册"
-    log_info "3. 使用 MAS 管理界面"
+    # 创建管理员用户（修复：使用完整路径和配置文件）
+    log_info "创建管理员用户..."
+    SHARED_SECRET=$(kubectl exec -n ess "$SYNAPSE_POD" -- cat /secrets/ess-generated/SYNAPSE_REGISTRATION_SHARED_SECRET)
     
-    # 提供临时解决方案：启用开放注册
-    read -p "是否临时启用开放注册以创建管理员用户? [y/N]: " enable_registration
-    if [[ "$enable_registration" == "y" || "$enable_registration" == "Y" ]]; then
-        log_info "临时启用开放注册..."
-        
-        # 创建临时配置补丁
-        kubectl exec -n ess "$SYNAPSE_POD" -- sh -c "
-            echo 'enable_registration: true' > /tmp/temp_registration.yaml
-            echo 'enable_registration_without_verification: true' >> /tmp/temp_registration.yaml
-        "
-        
-        log_info "请使用 Element 客户端连接到 https://${SUBDOMAIN_MATRIX}.${DOMAIN}:${EXTERNAL_HTTPS_PORT}"
-        log_info "注册用户名: $ADMIN_USERNAME"
-        log_info "注册完成后，我们将禁用开放注册并设置管理员权限"
-        
-        read -p "注册完成后按回车键继续..."
-        
-        # 禁用开放注册
-        kubectl exec -n ess "$SYNAPSE_POD" -- rm -f /tmp/temp_registration.yaml
-        
-        log_success "开放注册已禁用"
-        log_info "管理员用户设置完成: $ADMIN_USERNAME"
+    if kubectl exec -n ess "$SYNAPSE_POD" -- /usr/local/bin/register_new_matrix_user \
+        -c /conf/homeserver.yaml \
+        -k "$SHARED_SECRET" \
+        -u "$ADMIN_USERNAME" \
+        -p "$ADMIN_PASSWORD" \
+        -a; then
+        log_success "管理员用户创建完成: $ADMIN_USERNAME"
+        return 0
     else
-        log_info "跳过自动创建管理员用户"
-        log_info "请手动通过 Element 客户端或 MAS 管理界面创建用户"
+        log_error "管理员用户创建失败"
+        return 1
     fi
 }
 
