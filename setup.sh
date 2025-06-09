@@ -1281,21 +1281,6 @@ synapse:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
     className: "nginx"
     tlsEnabled: true
-    paths:
-      - path: /_matrix
-        pathType: Prefix
-        backend:
-          service:
-            name: ess-synapse
-            port:
-              name: haproxy-synapse
-      - path: /_synapse
-        pathType: Prefix
-        backend:
-          service:
-            name: ess-synapse
-            port:
-              name: haproxy-synapse
 
 # Element Web 配置
 elementWeb:
