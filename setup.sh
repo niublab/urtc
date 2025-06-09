@@ -1279,6 +1279,10 @@ synapse:
     host: "${SUBDOMAIN_MATRIX}.${DOMAIN}"
     annotations:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
+      nginx.ingress.kubernetes.io/server-snippet: |
+        if ($scheme = 'http') {
+          return 301 https://$host:${EXTERNAL_HTTPS_PORT}$request_uri;
+        }
     className: "nginx"
     tlsEnabled: true
 
@@ -1290,6 +1294,10 @@ elementWeb:
     host: "${SUBDOMAIN_CHAT}.${DOMAIN}"
     annotations:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
+      nginx.ingress.kubernetes.io/server-snippet: |
+        if ($scheme = 'http') {
+          return 301 https://$host:${EXTERNAL_HTTPS_PORT}$request_uri;
+        }
     className: "nginx"
     tlsEnabled: true
   additional:
