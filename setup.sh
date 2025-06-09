@@ -1281,6 +1281,21 @@ synapse:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
     className: "nginx"
     tlsEnabled: true
+    paths:
+      - path: /_matrix
+        pathType: Prefix
+        backend:
+          service:
+            name: ess-synapse
+            port:
+              name: haproxy-synapse
+      - path: /_synapse
+        pathType: Prefix
+        backend:
+          service:
+            name: ess-synapse
+            port:
+              name: haproxy-synapse
 
 # Element Web 配置
 elementWeb:
@@ -1290,6 +1305,10 @@ elementWeb:
     host: "${SUBDOMAIN_CHAT}.${DOMAIN}"
     annotations:
       cert-manager.io/cluster-issuer: "${cluster_issuer_name}"
+      nginx.ingress.kubernetes.io/server-snippet: |
+        if ($scheme = 'http') {
+          return 301 https://$host:${EXTERNAL_HTTPS_PORT}$request_uri;
+        }
     className: "nginx"
     tlsEnabled: true
   additional:
